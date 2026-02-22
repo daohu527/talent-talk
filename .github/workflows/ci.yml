@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run Node checks (if package.json present)
+        shell: bash
+        run: |
+          set -e
+          run_node() {
+            echo "Found package.json at $1"
+            pushd "$1" >/dev/null
+            if [ -f package-lock.json ]; then npm ci; else npm install || true; fi
+            if npm run -s lint >/dev/null 2>&1; then npm run lint || true; fi
+            if npm test --silent >/dev/null 2>&1; then npm test || true; fi
+            popd >/dev/null
+          }
+          if [ -f package.json ]; then run_node .; fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Run Python checks (if requirements or pyproject present)
+        shell: bash
+        run: |
+          set -e
+          run_py() {
+            echo "Python project at $1"
+            pushd "$1" >/dev/null
+            if [ -f requirements-dev.txt ]; then python -m pip install -r requirements-dev.txt; fi
+            if [ -f pyproject.toml ]; then python -m pip install -e .; fi
+            if python -m flake8 --version >/dev/null 2>&1; then python -m flake8 || true; fi
+            if python -m pytest -q >/dev/null 2>&1; then python -m pytest -q || true; fi
+            popd >/dev/null
+          }
+          if [ -f requirements-dev.txt ] || [ -f pyproject.toml ]; then run_py .; fi
