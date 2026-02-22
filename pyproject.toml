@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talent-talk"
+version = "0.1.0"
+description = "AI-powered interview assistant with checklist-based state management"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain-core>=0.2",
+    "langchain-openai>=0.1",
+    "pydantic>=2.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
