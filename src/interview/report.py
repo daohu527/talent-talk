@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.messages import BaseMessage, SystemMessage
 
@@ -108,7 +108,7 @@ def extract_structured_data(
 def generate_report(
     chat_history: list[BaseMessage],
     llm: LLMProtocol,
-    state: InterviewState | None = None,
+    state: Optional[InterviewState] = None,
 ) -> str:
     """Generate a Markdown-formatted interview evaluation report.
 

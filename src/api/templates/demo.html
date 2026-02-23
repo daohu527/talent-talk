@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>TalentTalk — Demo Chat</title>
+        <style>
+            :root{--bg:#f7fafc;--panel:#ffffff;--accent:#2563eb;--muted:#6b7280}
+            body{font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);margin:0;padding:20px;display:flex;justify-content:center}
+            .app{width:100%;max-width:820px;background:transparent}
+            .header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+            .brand{font-weight:700;font-size:18px}
+            .panel{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+            .chat{height:480px;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+            .msg{max-width:78%;padding:10px 12px;border-radius:14px;line-height:1.4}
+            .user{align-self:flex-end;background:#eef2ff;color:#042a56;border-bottom-right-radius:6px}
+            .ai{align-self:flex-start;background:#f3f4f6;color:#111;border-bottom-left-radius:6px}
+            .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+            .composer{display:flex;gap:8px;margin-top:12px}
+            .composer input{flex:1;padding:10px;border-radius:999px;border:1px solid #e5e7eb}
+            .composer button{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:999px;cursor:pointer}
+            .controls{display:flex;gap:8px;align-items:center;margin-top:10px}
+            .small{font-size:13px;color:var(--muted)}
+            .session-id{font-family:monospace;background:#f3f4f6;padding:4px 8px;border-radius:6px}
+            .reasoning { font-size: 0.85em; color: #444; background: #f7f7f9; border-left: 3px solid #ddd; padding: 6px 10px; margin-top:6px; }
+            .reasoning-toggle { cursor: pointer; color: #0366d6; font-size: 0.85em; margin-left: 8px; }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <div class="header">
+                <div class="brand">TalentTalk — Demo Chat</div>
+                <div class="small">(uses ARK when configured)</div>
+            </div>
+
+            <div class="panel">
+                <div class="meta">会话 — 自动创建新对话并进行结构化面试；详细日志按会话ID落盘</div>
+                <div class="controls">
+                    <button id="create-session">创建新会话</button>
+                    <label class="small">Session ID: <span id="session_id" class="session-id">-</span></label>
+                    <button id="view-session">刷新会话</button>
+                    <div style="flex:1"></div>
+                    <button id="download-report">整体面试评价</button>
+                </div>
+
+                <div id="chat" class="chat" aria-live="polite"></div>
+
+                <div class="composer">
+                    <input id="text" placeholder="输入你的问题或答案，按 Enter 发送" />
+                    <button id="send">发送</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const chatEl = document.getElementById('chat');
+            const inputEl = document.getElementById('text');
+            const sendBtn = document.getElementById('send');
+            const createBtn = document.getElementById('create-session');
+            const viewBtn = document.getElementById('view-session');
+            const sessionIdEl = document.getElementById('session_id');
+            const downloadBtn = document.getElementById('download-report');
+            let demoSessionId = null;
+
+            async function bootstrapDemoSession(){
+                demoSessionId = null;
+                chatEl.innerHTML = '';
+                sessionIdEl.textContent = '-';
+                try {
+                    const resp = await fetch('/demo_api', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({text:'', session_id: null})
+                    });
+                    if(!resp.ok){
+                        let detail = 'bootstrap failed';
+                        try {
+                            const err = await resp.json();
+                            detail = err.detail || detail;
+                        } catch (_) {}
+                        throw new Error(detail);
+                    }
+                    const data = await resp.json();
+                    if(data.session_id){
+                        demoSessionId = data.session_id;
+                        sessionIdEl.textContent = demoSessionId;
+                    }
+                    if(data.next_question){
+                        appendMessage(data.next_question, 'ai');
+                    }
+                } catch (err) {
+                    appendMessage('错误: ' + (err.message || err), 'ai');
+                }
+            }
+
+            function appendMessage(text, cls){
+                const d = document.createElement('div');
+                d.className = 'msg ' + cls;
+                d.textContent = text;
+                chatEl.appendChild(d);
+                chatEl.scrollTop = chatEl.scrollHeight;
+            }
+
+            async function sendText(text){
+                const sid = sessionIdEl.textContent && sessionIdEl.textContent !== '-' ? sessionIdEl.textContent : null;
+                appendMessage(text, 'user');
+                try{
+                    if(sid){
+                        const resp = await fetch(`/session/${sid}/turn`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_message:text})});
+                        if(!resp.ok) throw new Error('session request failed');
+                        const data = await resp.json();
+                        const out = data.reply || JSON.stringify(data, null, 2);
+                        appendMessage(out, 'ai');
+                    } else {
+                        const resp = await fetch('/demo_api', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text, session_id: demoSessionId})});
+                        if(!resp.ok){
+                            let detail = 'request failed';
+                            try {
+                                const err = await resp.json();
+                                detail = err.detail || detail;
+                            } catch (_) {}
+                            throw new Error(detail);
+                        }
+                        const data = await resp.json();
+                        if(data.session_id){
+                            demoSessionId = data.session_id;
+                        }
+                        const nextQ = data.next_question || JSON.stringify(data, null, 2);
+                        const aiMsg = document.createElement('div');
+                        aiMsg.className = 'msg ai';
+                        aiMsg.textContent = nextQ;
+                        chatEl.appendChild(aiMsg);
+                        if(data.summary){
+                            const toggle = document.createElement('div');
+                            toggle.className = 'reasoning-toggle';
+                            toggle.textContent = 'Show summary';
+                            const summary = document.createElement('div');
+                            summary.className = 'reasoning';
+                            summary.style.display = 'none';
+                            summary.textContent = data.summary;
+                            toggle.onclick = ()=>{
+                                if(summary.style.display === 'none'){ summary.style.display='block'; toggle.textContent='Hide summary'; }
+                                else { summary.style.display='none'; toggle.textContent='Show summary'; }
+                            };
+                            chatEl.appendChild(toggle);
+                            chatEl.appendChild(summary);
+                        }
+                        if(data.thought){
+                            const t = document.createElement('div');
+                            t.className = 'reasoning';
+                            t.textContent = '思路：' + data.thought;
+                            chatEl.appendChild(t);
+                        }
+                        if(data.completion_score){
+                            const s = data.completion_score;
+                            appendMessage(`完成度 背景:${s.background||0} 技术:${s.tech||0} 项目:${s.project||0}`, 'ai');
+                        }
+                        chatEl.scrollTop = chatEl.scrollHeight;
+                    }
+                }catch(err){
+                    appendMessage('错误: ' + (err.message||err), 'ai');
+                }
+            }
+
+            sendBtn.addEventListener('click', (e)=>{e.preventDefault();const t=inputEl.value.trim();if(!t) return;inputEl.value='';sendText(t);});
+            inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendBtn.click(); } });
+
+            // Auto-bootstrap first interviewer question without requiring user input
+            bootstrapDemoSession();
+
+            createBtn.addEventListener('click', async (e)=>{
+                e.preventDefault();
+                await bootstrapDemoSession();
+            });
+
+            viewBtn.addEventListener('click', async (e)=>{
+                e.preventDefault();
+                const sid = sessionIdEl.textContent;
+                if(!sid || sid === '-') return alert('先创建或填写 session id');
+                const r = await fetch(`/session/${sid}`);
+                if(!r.ok) return alert('session 未找到');
+                const data = await r.json();
+                chatEl.innerHTML = '';
+                for(const m of (data.history||[])){
+                    appendMessage(m.content, m.role==='human' ? 'user' : 'ai');
+                }
+            });
+
+            downloadBtn.addEventListener('click', async (e)=>{
+                e.preventDefault();
+                const sid = demoSessionId || sessionIdEl.textContent;
+                if(!sid || sid === '-') return alert('当前没有可评价的会话');
+                const rep = await fetch(`/demo_session/${sid}/evaluation`);
+                if(!rep.ok){
+                    const err = await rep.json().catch(()=>({}));
+                    return alert(err.detail || '评价获取失败');
+                }
+                const data = await rep.json();
+                appendMessage(
+                    `整体评价(${data.overall.level}) 总分:${data.overall.total}/30；建议：${data.overall.advice}；日志文件:${data.logs_file}`,
+                    'ai'
+                );
+            });
+        </script>
+    </body>
+</html>
